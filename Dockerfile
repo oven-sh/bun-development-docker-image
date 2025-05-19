@@ -96,17 +96,8 @@ RUN git pull && \
     mkdir -p build/debug && \
     mkdir -p build/debug/cache
 
-# Prepare build directories
-RUN cd src && npm install && cd ..
-
 # Build only the debug version to save space
-RUN bun run build:debug
-
-# Clean up large build files to save space
-RUN rm -rf build/debug/CMakeFiles && \
-    rm -rf .git && \
-    rm -rf src/node_modules && \
-    find . -name "*.o" -delete
+RUN bun run build && rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version
