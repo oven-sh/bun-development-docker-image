@@ -1,11 +1,13 @@
-# Bun Development Docker Image
+# Bun Debug Docker Image
 
-A daily-built multi-architecture Docker image for Bun development that contains:
+A daily-built multi-architecture Docker image for **debug builds of Bun** that contains:
 
 1. A base image with a pre-setup Bun development environment
 2. A pre-built image with compiled artifacts
 
 Both images are published to GitHub Container Registry daily for both AMD64 and ARM64 architectures.
+
+Note: this is not for developing applications with Bun, but rather for developing Bun itself.
 
 ## Usage
 
