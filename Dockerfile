@@ -72,8 +72,7 @@ RUN echo "#include <array>" > /tmp/test.cpp && \
     g++ --version
 
 ENV PATH="/workspace/bun/build/debug:/workspace/bun/build/release:${PATH}"
-ENV BUN_BUILD_INTERACTIVE=0
-ENV BUN_BUILD_CACHE=1
+
 
 # Create a variant with pre-built artifacts - Only binary
 FROM base AS prebuilt
@@ -95,7 +94,19 @@ RUN git pull && \
 # Build only the debug version to save space
 RUN bun run build && rm -rf /tmp/*
 
+ENV BUN_DEBUG_QUIET_LOGS=1
+ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
+ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
+
 # Test that the binary works
 RUN bun-debug --version
 
 CMD ["/bin/bash"]
+
+FROM prebuilt as run
+
+RUN mkdir -p /workspace/cwd
+VOLUME /workspace/cwd
+WORKDIR /workspace/cwd
+
+ENTRYPOINT ["/workspace/bun/build/debug/bun-debug"]
