@@ -49,6 +49,8 @@ jobs:
           platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.DATE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -66,6 +68,8 @@ jobs:
           platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:prebuilt
+            ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }}
           cache-from: type=gha
           build-args: |
             BUILDKIT_INLINE_CACHE=1
@@ -113,6 +117,8 @@ jobs:
           platforms: linux/arm64
           tags: |
             ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:latest-arm64
+            ghcr.io/${{ github.repository }}:${{ env.DATE }}-arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -130,68 +136,8 @@ jobs:
           platforms: linux/arm64
           tags: |
             ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:prebuilt-arm64
+            ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }}-arm64
           cache-from: type=gha
           build-args: |
             BUILDKIT_INLINE_CACHE=1
-
-  # Create manifest list tags
-  create-manifest-tags:
-    needs: [build-amd64, build-arm64]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Docker Experimental Features
-        run: |
-          echo '{"experimental": true}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-
-      - name: Create and push multi-platform manifest tags
-        run: |
-          # Enable experimental Docker CLI features for manifest commands
-          export DOCKER_CLI_EXPERIMENTAL=enabled
-          
-          # Pull the images to ensure they're available locally
-          docker pull ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }}
-          docker pull ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
-          docker pull ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }}
-          docker pull ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
-          
-          # Create base image manifest
-          docker manifest create ghcr.io/${{ github.repository }}:latest \
-            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
-          
-          # Create dated base image manifest
-          docker manifest create ghcr.io/${{ github.repository }}:${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
-          
-          # Create prebuilt image manifest
-          docker manifest create ghcr.io/${{ github.repository }}:prebuilt \
-            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
-          
-          # Create dated prebuilt image manifest
-          docker manifest create ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
-          
-          # Push the manifests
-          docker manifest push --purge ghcr.io/${{ github.repository }}:latest
-          docker manifest push --purge ghcr.io/${{ github.repository }}:${{ env.DATE }}
-          docker manifest push --purge ghcr.io/${{ github.repository }}:prebuilt
-          docker manifest push --purge ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }}
