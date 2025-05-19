@@ -71,8 +71,6 @@ RUN echo "#include <array>" > /tmp/test.cpp && \
     rm /tmp/test /tmp/test.cpp && \
     g++ --version
 
-
-
 ENV PATH="/workspace/bun/build/debug:/workspace/bun/build/release:${PATH}"
 ENV BUN_BUILD_INTERACTIVE=0
 ENV BUN_BUILD_CACHE=1
