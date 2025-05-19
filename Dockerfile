@@ -49,9 +49,6 @@ RUN case "$(uname -s)" in \
 RUN git clone https://github.com/oven-sh/bun.git /workspace/bun
 WORKDIR /workspace/bun
 
-# Bootstrap development environment
-RUN sh scripts/bootstrap.sh
-
 # Install modern GCC/G++ with full C++20 support from Debian testing
 RUN echo "deb http://deb.debian.org/debian testing main" > /etc/apt/sources.list.d/testing.list && \
     echo "APT::Default-Release \"stable\";" > /etc/apt/apt.conf.d/99defaultrelease && \
@@ -73,17 +70,45 @@ RUN echo "#include <array>" > /tmp/test.cpp && \
     rm /tmp/test /tmp/test.cpp && \
     g++ --version
 
-ENV PATH="/workspace/bun/build/debug:/workspace/bun/build/release:${PATH}"
+# Bootstrap development environment and prepare build directories
+RUN mkdir -p /workspace/bun/build/debug/cache && \
+    mkdir -p /workspace/bun/build/release/cache && \
+    sh scripts/bootstrap.sh
 
-# Create a variant with pre-built artifacts
+ENV PATH="/workspace/bun/build/debug:/workspace/bun/build/release:${PATH}"
+ENV BUN_BUILD_INTERACTIVE=0
+ENV BUN_BUILD_CACHE=1
+
+# Create a variant with pre-built artifacts - Only binary
 FROM base AS prebuilt
 
-# Build Bun
+# Build Bun - minimal approach to save space
 WORKDIR /workspace/bun
 
-# Have to fit in the github limit.
-RUN git pull && bun run build && rm -rf build/debug/CMakeFiles/bun-debug.dir/src
+# Clean up and prepare build environment
+RUN git pull && \
+    # Clean temporary files
+    rm -rf /tmp/* && \
+    # Remove unnecessary packages
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Set up build environment variables
+    mkdir -p build/debug && \
+    mkdir -p build/debug/cache
 
+# Prepare build directories
+RUN cd src && npm install && cd ..
+
+# Build only the debug version to save space
+RUN bun run build:debug
+
+# Clean up large build files to save space
+RUN rm -rf build/debug/CMakeFiles && \
+    rm -rf .git && \
+    rm -rf src/node_modules && \
+    find . -name "*.o" -delete
+
+# Test that the binary works
 RUN bun-debug --version
 
 CMD ["/bin/bash"]
