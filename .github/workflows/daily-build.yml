@@ -1,0 +1,189 @@
+name: Daily Docker Build
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Run daily at midnight UTC
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  # Build AMD64 image
+  build-amd64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push base image (AMD64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: base
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }}
+
+      - name: Build and push pre-built image (AMD64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: prebuilt
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }}
+
+      - name: Extract build artifacts (AMD64)
+        run: |
+          # Create a temporary container from the prebuilt image
+          CONTAINER_ID=$(docker create ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }})
+
+          # Create a directory for the build artifacts
+          mkdir -p ./bun-build-artifacts
+
+          # Copy the build folder from the container
+          docker cp $CONTAINER_ID:/workspace/bun/build ./bun-build-artifacts
+
+          # Remove the temporary container
+          docker rm $CONTAINER_ID
+
+          # Create a compressed archive of the build folder
+          tar -czvf bun-build-amd64-${{ env.DATE }}.tar.gz ./bun-build-artifacts
+
+      - name: Upload build artifacts (AMD64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bun-build-amd64-${{ env.DATE }}
+          path: bun-build-amd64-${{ env.DATE }}.tar.gz
+
+  # Build ARM64 image using GitHub's ARM64 runner
+  build-arm64:
+    runs-on: ubuntu-24.04-arm64
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push base image (ARM64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: base
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
+
+      - name: Build and push pre-built image (ARM64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: prebuilt
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
+
+      - name: Extract build artifacts (ARM64)
+        run: |
+          # Create a temporary container from the prebuilt image
+          CONTAINER_ID=$(docker create ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }})
+
+          # Create a directory for the build artifacts
+          mkdir -p ./bun-build-artifacts
+
+          # Copy the build folder from the container
+          docker cp $CONTAINER_ID:/workspace/bun/build ./bun-build-artifacts
+
+          # Remove the temporary container
+          docker rm $CONTAINER_ID
+
+          # Create a compressed archive of the build folder
+          tar -czvf bun-build-arm64-${{ env.DATE }}.tar.gz ./bun-build-artifacts
+
+      - name: Upload build artifacts (ARM64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bun-build-arm64-${{ env.DATE }}
+          path: bun-build-arm64-${{ env.DATE }}.tar.gz
+
+  # Create multi-platform images
+  create-multiplatform-images:
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-platform manifest for base image
+        run: |
+          docker manifest create ghcr.io/${{ github.repository }}:latest \
+            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
+
+          docker manifest create ghcr.io/${{ github.repository }}:${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
+            
+          docker manifest push ghcr.io/${{ github.repository }}:latest
+          docker manifest push ghcr.io/${{ github.repository }}:${{ env.DATE }}
+
+      - name: Create and push multi-platform manifest for prebuilt image
+        run: |
+          docker manifest create ghcr.io/${{ github.repository }}:prebuilt \
+            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
+
+          docker manifest create ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }} \
+            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
+            
+          docker manifest push ghcr.io/${{ github.repository }}:prebuilt
+          docker manifest push ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }}
