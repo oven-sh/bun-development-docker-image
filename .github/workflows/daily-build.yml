@@ -6,8 +6,8 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 jobs:
-  # Build and push base multi-platform image
-  build-base:
+  # Build AMD64 base image
+  build-amd64-base:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,10 +26,52 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          platforms: arm64
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push AMD64 base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: base
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prune Docker
+        run: |
+          docker system prune -af
+          df -h
+
+  # Build ARM64 base image
+  build-arm64-base:
+    runs-on: ubuntu-24.04-arm64
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -41,16 +83,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push base multi-platform image
+      - name: Build and push ARM64 base image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           target: base
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -59,10 +100,46 @@ jobs:
           docker system prune -af
           df -h
 
+  # Create multi-platform base image
+  create-multiplatform-base:
+    needs: [build-amd64-base, build-arm64-base]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-platform base image
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.DATE }}
+          oci-mediatypes: true
+          inputs: |
+            type=registry,reference=ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }},platform=linux/amd64
+            type=registry,reference=ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }},platform=linux/arm64
+
   # Build AMD64 prebuilt image
   build-amd64-prebuilt:
     runs-on: ubuntu-latest
-    needs: build-base
+    needs: build-amd64-base
     permissions:
       contents: read
       packages: write
@@ -106,7 +183,7 @@ jobs:
   # Build ARM64 prebuilt image
   build-arm64-prebuilt:
     runs-on: ubuntu-24.04-arm64
-    needs: build-base
+    needs: build-arm64-base
     permissions:
       contents: read
       packages: write
@@ -147,7 +224,7 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
-  # Merge prebuilt images into multi-platform image
+  # Create multi-platform prebuilt image
   create-multiplatform-prebuilt:
     needs: [build-amd64-prebuilt, build-arm64-prebuilt]
     runs-on: ubuntu-latest
@@ -170,7 +247,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create and push multi-platform prebuilt manifest
+      - name: Create and push multi-platform prebuilt image
         uses: docker/build-push-action@v5
         with:
           push: true
@@ -178,7 +255,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:prebuilt
             ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }}
-          provenance: false
           oci-mediatypes: true
           inputs: |
             type=registry,reference=ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }},platform=linux/amd64
