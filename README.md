@@ -12,7 +12,7 @@ Both images are published to GitHub Container Registry daily for both AMD64 and 
 ### Base Development Image
 
 ```bash
-docker pull ghcr.io/USERNAME/bun-dev-docker-image:latest
+docker pull ghcr.io/USERNAME/bun-development-docker-image:latest
 ```
 
 This image contains:
@@ -26,7 +26,7 @@ This image contains:
 ### Pre-built Image
 
 ```bash
-docker pull ghcr.io/USERNAME/bun-dev-docker-image:prebuilt
+docker pull ghcr.io/USERNAME/bun-development-docker-image:prebuilt
 ```
 
 This image includes everything in the base image, plus:
@@ -37,10 +37,10 @@ This image includes everything in the base image, plus:
 
 ```bash
 # Run the base development image
-docker run -it --rm ghcr.io/USERNAME/bun-dev-docker-image:latest
+docker run -it --rm ghcr.io/USERNAME/bun-development-docker-image:latest
 
 # Run the pre-built image
-docker run -it --rm ghcr.io/USERNAME/bun-dev-docker-image:prebuilt
+docker run -it --rm ghcr.io/USERNAME/bun-development-docker-image:prebuilt
 ```
 
 ### Platform-Specific Images
@@ -49,10 +49,10 @@ If you need a specific architecture:
 
 ```bash
 # AMD64
-docker run -it --rm --platform linux/amd64 ghcr.io/USERNAME/bun-dev-docker-image:latest
+docker run -it --rm --platform linux/amd64 ghcr.io/USERNAME/bun-development-docker-image:latest
 
 # ARM64
-docker run -it --rm --platform linux/arm64 ghcr.io/USERNAME/bun-dev-docker-image:latest
+docker run -it --rm --platform linux/arm64 ghcr.io/USERNAME/bun-development-docker-image:latest
 ```
 
 ### Mounting Your Local Files
@@ -60,7 +60,7 @@ docker run -it --rm --platform linux/arm64 ghcr.io/USERNAME/bun-dev-docker-image
 To work on the Bun codebase with your local editor:
 
 ```bash
-docker run -it --rm -v $(pwd):/workspace/local ghcr.io/USERNAME/bun-dev-docker-image:latest
+docker run -it --rm -v $(pwd):/workspace/local ghcr.io/USERNAME/bun-development-docker-image:latest
 ```
 
 ## Tags
