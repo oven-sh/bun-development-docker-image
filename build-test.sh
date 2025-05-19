@@ -31,7 +31,7 @@ CONTAINER_ID=$(docker create --platform $PLATFORM bun-dev:prebuilt)
 mkdir -p ./bun-build-artifacts
 docker cp $CONTAINER_ID:/workspace/bun/build ./bun-build-artifacts
 docker rm $CONTAINER_ID
-tar -czvf  ./bun-build-artifacts bun-build-$PLATFORM-$(date +%Y-%m-%d).tar.gz
+tar -czvf bun-build-$PLATFORM-$(date +%Y-%m-%d).tar.gz ./bun-build-artifacts 
 rm -rf ./bun-build-artifacts
 
 echo "All tests passed!"

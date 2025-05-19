@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim AS base
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     unzip \
@@ -56,7 +56,7 @@ RUN sh scripts/bootstrap.sh
 RUN echo "deb http://deb.debian.org/debian testing main" > /etc/apt/sources.list.d/testing.list && \
     echo "APT::Default-Release \"stable\";" > /etc/apt/apt.conf.d/99defaultrelease && \
     apt-get update && \
-    apt-get -t testing install -y gcc-12 g++-12 libstdc++-12-dev && \
+    apt-get -t testing install --no-install-recommends -y gcc-12 g++-12 libstdc++-12-dev && \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 120 && \
     update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 120 && \
