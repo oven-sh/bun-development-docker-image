@@ -49,6 +49,9 @@ RUN case "$(uname -s)" in \
 RUN git clone https://github.com/oven-sh/bun.git /workspace/bun
 WORKDIR /workspace/bun
 
+# Bootstrap development environment and prepare build directories
+RUN sh scripts/bootstrap.sh
+
 # Install modern GCC/G++ with full C++20 support from Debian testing
 RUN echo "deb http://deb.debian.org/debian testing main" > /etc/apt/sources.list.d/testing.list && \
     echo "APT::Default-Release \"stable\";" > /etc/apt/apt.conf.d/99defaultrelease && \
@@ -57,9 +60,7 @@ RUN echo "deb http://deb.debian.org/debian testing main" > /etc/apt/sources.list
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 120 && \
     update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 120 && \
-    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 120 && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 120
 
 # Verify C++20 support including constexpr std::array<std::string>
 RUN echo "#include <array>" > /tmp/test.cpp && \
@@ -70,10 +71,7 @@ RUN echo "#include <array>" > /tmp/test.cpp && \
     rm /tmp/test /tmp/test.cpp && \
     g++ --version
 
-# Bootstrap development environment and prepare build directories
-RUN mkdir -p /workspace/bun/build/debug/cache && \
-    mkdir -p /workspace/bun/build/release/cache && \
-    sh scripts/bootstrap.sh
+
 
 ENV PATH="/workspace/bun/build/debug:/workspace/bun/build/release:${PATH}"
 ENV BUN_BUILD_INTERACTIVE=0
