@@ -103,6 +103,10 @@ RUN bun-debug --version
 
 CMD ["/bin/bash"]
 
+# Minimal stage for extracting build artifacts
+FROM scratch AS artifacts
+COPY --from=prebuilt /workspace/bun/build /build
+
 FROM prebuilt as run
 
 RUN mkdir -p /workspace/cwd
