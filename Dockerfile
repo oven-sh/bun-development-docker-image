@@ -57,6 +57,8 @@ RUN case "$(uname -s)" in \
 RUN git clone https://github.com/oven-sh/bun.git /workspace/bun
 WORKDIR /workspace/bun
 
+ENV BUN_NO_CORE_DUMP=1
+
 # Bootstrap development environment and prepare build directories
 RUN sh -c "git pull && scripts/bootstrap.sh"
 
