@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS base
+FROM debian:trixie-slim AS base
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,10 +9,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     python3 \
+    python3-pip \
     wget \
     ca-certificates \
     gnupg \
-    && rm -rf /var/lib/apt/lists/*
+    apt-transport-https \
+    gcc-12 g++-12 libstdc++-12-dev \
+    lsb-release \
+    sudo \
+    make \
+    libtool \
+    ruby \
+    perl
 
 # Create workspace directory
 RUN mkdir -p /workspace/bun
@@ -50,17 +58,9 @@ RUN git clone https://github.com/oven-sh/bun.git /workspace/bun
 WORKDIR /workspace/bun
 
 # Bootstrap development environment and prepare build directories
-RUN sh scripts/bootstrap.sh
+RUN sh -c "git pull && scripts/bootstrap.sh"
 
-# Install modern GCC/G++ with full C++20 support from Debian testing
-RUN echo "deb http://deb.debian.org/debian testing main" > /etc/apt/sources.list.d/testing.list && \
-    echo "APT::Default-Release \"stable\";" > /etc/apt/apt.conf.d/99defaultrelease && \
-    apt-get update && \
-    apt-get -t testing install --no-install-recommends -y gcc-12 g++-12 libstdc++-12-dev && \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 120 && \
-    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 120 && \
-    update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 120 && \
-    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 120
+
 
 # Verify C++20 support including constexpr std::array<std::string>
 RUN echo "#include <array>" > /tmp/test.cpp && \
