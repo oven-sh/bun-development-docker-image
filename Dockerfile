@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     libtool \
     ruby \
-    perl
+    perl \
+    gdb
 
 # Create workspace directory
 RUN mkdir -p /workspace/bun
@@ -93,12 +94,13 @@ RUN git pull && \
     mkdir -p build/debug && \
     mkdir -p build/debug/cache
 
-# Build only the debug version to save space
-RUN bun run build && rm -rf /tmp/*
-
+ENV ENABLE_ZIG_ASAN=0
 ENV BUN_DEBUG_QUIET_LOGS=1
 ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
 ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
+
+# Build only the debug version to save space
+RUN bun run build && rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version
