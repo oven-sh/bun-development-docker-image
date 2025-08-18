@@ -165,9 +165,21 @@ WORKDIR /workspace/webkit
 # Install dependencies using the repository's package.json if it exists
 RUN if [ -f package.json ]; then bun install; fi
 
+# Fix the build.ts script to remove problematic flags
+RUN if [ -f build.ts ]; then \
+    sed -i 's/-Wl,--whole-archive//g' build.ts && \
+    sed -i 's/cflags.push("-Wl,--whole-archive");//g' build.ts && \
+    sed -i 's/cxxflags.push("-Wl,--whole-archive",//g' build.ts && \
+    sed -i '/"-Wl,--whole-archive"/d' build.ts && \
+    sed -i 's/-ffat-lto-objects//g' build.ts; \
+    fi
+
 # Run the build script - it will build to WebKitBuild/Debug
 # Set build type to Debug for development
 ENV WEBKIT_RELEASE_TYPE=Debug
+# Clear any problematic environment variables that might have been set
+ENV CFLAGS=""
+ENV CXXFLAGS=""
 # Create build directory first to ensure it exists
 RUN mkdir -p WebKitBuild && \
     if [ -f build.ts ]; then bun run build.ts debug; \
