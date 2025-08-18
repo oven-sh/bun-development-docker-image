@@ -153,8 +153,6 @@ ENV CXX="clang++-${LLVM_VERSION}"
 ENV AR="llvm-ar-${LLVM_VERSION}"
 ENV RANLIB="llvm-ranlib-${LLVM_VERSION}"
 ENV LD="lld-${LLVM_VERSION}"
-ENV CFLAGS="-stdlib=libstdc++"
-ENV CXXFLAGS="-stdlib=libstdc++"
 ENV LDFLAGS="-fuse-ld=lld"
 
 # Create workspace directory and clone WebKit from oven-sh
