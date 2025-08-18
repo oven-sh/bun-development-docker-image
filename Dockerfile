@@ -21,7 +21,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     ruby \
     perl \
-    gdb
+    gdb \
+    jq \
+    ccache \
+    ripgrep
 
 # Create workspace directory
 RUN mkdir -p /workspace/bun

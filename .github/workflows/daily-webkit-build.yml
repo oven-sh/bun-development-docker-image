@@ -1,0 +1,289 @@
+name: Daily WebKit Docker Build
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Run daily at 9:00am Japan Time (UTC+9)
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  # Build AMD64 base image
+  build-amd64-webkit-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push AMD64 WebKit base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: webkit-base
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:base-amd64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:base-amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prune Docker
+        run: |
+          docker system prune -af
+          df -h
+
+  # Build ARM64 base image
+  build-arm64-webkit-base:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ARM64 WebKit base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: webkit-base
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:base-arm64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:base-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prune Docker
+        run: |
+          docker system prune -af
+          df -h
+
+  # Build AMD64 prebuilt image
+  build-amd64-webkit-prebuilt:
+    runs-on: ubuntu-latest
+    needs: build-amd64-webkit-base
+    timeout-minutes: 180  # 3 hours for WebKit build
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push AMD64 WebKit prebuilt image
+        id: build-amd64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: prebuilt
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-amd64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-amd64
+          cache-from: type=gha
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Build & Push Run image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: run
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:run-amd64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:run-amd64
+          cache-from: type=gha
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  # Build ARM64 prebuilt image
+  build-arm64-webkit-prebuilt:
+    runs-on: ubuntu-24.04-arm
+    needs: build-arm64-webkit-base
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ARM64 WebKit prebuilt image
+        id: build-arm64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: prebuilt
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-arm64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-arm64
+          cache-from: type=gha
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Build & Push Run image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.webkit
+          push: true
+          target: run
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/oven-sh/webkit-development-docker-image:run-arm64-${{ env.DATE }}
+            ghcr.io/oven-sh/webkit-development-docker-image:run-arm64
+          cache-from: type=gha
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  # Create multi-platform images
+  create-multiplatform-webkit-images:
+    needs:
+      [
+        build-amd64-webkit-base,
+        build-arm64-webkit-base,
+        build-amd64-webkit-prebuilt,
+        build-arm64-webkit-prebuilt,
+      ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Create multi-platform base images
+      - name: Create and push multi-platform WebKit base image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:base-${{ env.DATE }} \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:base \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:latest \
+            ghcr.io/oven-sh/webkit-development-docker-image:base-amd64 \
+            ghcr.io/oven-sh/webkit-development-docker-image:base-arm64
+
+      # Create multi-platform prebuilt images
+      - name: Create and push multi-platform WebKit prebuilt image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-${{ env.DATE }} \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:prebuilt \
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-amd64 \
+            ghcr.io/oven-sh/webkit-development-docker-image:prebuilt-arm64
+
+      - name: Create and push multi-platform WebKit run image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:run-${{ env.DATE }} \
+            -t ghcr.io/oven-sh/webkit-development-docker-image:run \
+            ghcr.io/oven-sh/webkit-development-docker-image:run-amd64 \
+            ghcr.io/oven-sh/webkit-development-docker-image:run-arm64

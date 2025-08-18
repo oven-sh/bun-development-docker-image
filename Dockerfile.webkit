@@ -1,0 +1,195 @@
+# WebKit development Docker image
+FROM ubuntu:22.04 AS webkit-base
+
+ARG LLVM_VERSION="19"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic build dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    ninja-build \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    sudo \
+    jq \
+    ripgrep \
+    vim \
+    openssh-client \
+    build-essential \
+    pkg-config \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install modern CMake
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null \
+    && apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" \
+    && apt-get update \
+    && apt-get install -y cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GCC 13 toolchain
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test \
+    && apt-get update \
+    && apt-get install -y \
+        gcc-13 \
+        g++-13 \
+        libgcc-13-dev \
+        libstdc++-13-dev \
+        libasan8 \
+        libubsan1 \
+        libatomic1 \
+        libtsan2 \
+        liblsan0 \
+        libgfortran5 \
+        libc6-dev \
+        ccache \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GCC 13 as default
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 \
+    --slave /usr/bin/g++ g++ /usr/bin/g++-13 \
+    --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-13 \
+    --slave /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-13 \
+    --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-13
+
+# Install LLVM 19
+RUN wget https://apt.llvm.org/llvm.sh \
+    && chmod +x llvm.sh \
+    && ./llvm.sh 19 all \
+    && rm llvm.sh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up LLVM toolchain symlinks
+RUN for f in /usr/lib/llvm-${LLVM_VERSION}/bin/*; do ln -sf "$f" /usr/bin; done \
+    && ln -sf /usr/bin/clang-${LLVM_VERSION} /usr/bin/clang \
+    && ln -sf /usr/bin/clang++-${LLVM_VERSION} /usr/bin/clang++ \
+    && ln -sf /usr/bin/lld-${LLVM_VERSION} /usr/bin/lld \
+    && ln -sf /usr/bin/lldb-${LLVM_VERSION} /usr/bin/lldb \
+    && ln -sf /usr/bin/clangd-${LLVM_VERSION} /usr/bin/clangd \
+    && ln -sf /usr/bin/llvm-ar-${LLVM_VERSION} /usr/bin/llvm-ar \
+    && ln -sf /usr/bin/ld.lld /usr/bin/ld \
+    && ln -sf /usr/bin/clang /usr/bin/cc \
+    && ln -sf /usr/bin/clang++ /usr/bin/c++
+
+# Install additional WebKit build dependencies
+RUN apt-get update && apt-get install -y \
+    libxml2-dev \
+    ruby \
+    ruby-dev \
+    bison \
+    gawk \
+    perl \
+    make \
+    libtool \
+    gdb \
+    automake \
+    autoconf \
+    python3-setuptools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y gh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Rust using rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \
+    rustup default stable && \
+    rustup component add rustfmt clippy
+
+# Install Bun
+RUN case "$(uname -m)" in \
+      arm64 | aarch64)  arch=aarch64;; \
+      *)                arch=x64;; \
+    esac \
+    && target="bun-linux-${arch}" \
+    && curl -LO "https://pub-5e11e972747a44bf9aaf9394f185a982.r2.dev/releases/latest/${target}.zip" --retry 5 \
+    && unzip ${target}.zip \
+    && mkdir -p /usr/local/bun/bin \
+    && mv ${target}/bun* /usr/local/bun/bin/ \
+    && chmod +x /usr/local/bun/bin/* \
+    && ln -fs /usr/local/bun/bin/bun /usr/local/bin/bun \
+    && ln -fs /usr/local/bun/bin/bunx /usr/local/bin/bunx \
+    && rm -rf ${target}.zip ${target}
+
+# Configure library paths for architecture
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        export ARCH_PATH="aarch64-linux-gnu"; \
+    else \
+        export ARCH_PATH="x86_64-linux-gnu"; \
+    fi \
+    && mkdir -p /usr/lib/gcc/${ARCH_PATH}/13 \
+    && ln -sf /usr/lib/${ARCH_PATH}/libstdc++.so.6 /usr/lib/gcc/${ARCH_PATH}/13/ \
+    && echo "/usr/lib/gcc/${ARCH_PATH}/13" > /etc/ld.so.conf.d/gcc-13.conf \
+    && echo "/usr/lib/${ARCH_PATH}" >> /etc/ld.so.conf.d/gcc-13.conf \
+    && ldconfig
+
+# Configure ccache for faster rebuilds
+ENV CCACHE_DIR=/workspace/.ccache
+RUN mkdir -p /workspace/.ccache && \
+    ccache --set-config=max_size=10G && \
+    ccache --set-config=compression=true && \
+    ccache --set-config=compression_level=6
+
+# Set environment variables for toolchain
+ENV CC="clang-${LLVM_VERSION}"
+ENV CXX="clang++-${LLVM_VERSION}"
+ENV AR="llvm-ar-${LLVM_VERSION}"
+ENV RANLIB="llvm-ranlib-${LLVM_VERSION}"
+ENV LD="lld-${LLVM_VERSION}"
+ENV CFLAGS="-stdlib=libstdc++"
+ENV CXXFLAGS="-stdlib=libstdc++"
+ENV LDFLAGS="-fuse-ld=lld"
+
+# Create workspace directory and clone WebKit from oven-sh
+RUN mkdir -p /workspace
+WORKDIR /workspace
+RUN git clone https://github.com/oven-sh/webkit.git webkit
+
+WORKDIR /workspace/webkit
+
+# Install dependencies using the repository's package.json if it exists
+RUN if [ -f package.json ]; then bun install; fi
+
+# Run the build script - it will build to WebKitBuild/Debug
+# Set build type to Debug for development
+ENV WEBKIT_RELEASE_TYPE=Debug
+# Create build directory first to ensure it exists
+RUN mkdir -p WebKitBuild && \
+    if [ -f build.ts ]; then bun run build.ts debug; \
+    elif [ -f scripts/build.sh ]; then ./scripts/build.sh; \
+    else echo "Warning: No build script found"; fi
+
+CMD ["/bin/bash"]
+
+# Prebuilt stage - just uses the base with WebKit already built
+FROM webkit-base AS prebuilt
+
+# Add WebKit build paths to PATH for convenience
+ENV PATH="/workspace/webkit/WebKitBuild/Debug/bin:${PATH}"
+
+CMD ["/bin/bash"]
+
+FROM prebuilt as run
+
+RUN mkdir -p /workspace/cwd
+VOLUME /workspace/cwd
+WORKDIR /workspace/cwd
+
+CMD ["/bin/bash"]
