@@ -1,0 +1,108 @@
+# escape=`
+# Stage 1: Bootstrap - development environment only (VS, SDK, tools)
+FROM mcr.microsoft.com/windows/servercore:ltsc2022 AS bootstrap
+
+SHELL ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Install Chocolatey with non-interactive settings
+ENV CHOCO NON_INTERACTIVE=1
+RUN Set-ExecutionPolicy Bypass -Scope Process -Force; `
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; `
+    [System.Environment]::SetEnvironmentVariable('ChocolateyInstall', 'C:\ProgramData\chocolatey', 'Machine'); `
+    iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); `
+    $env:PATH = $env:PATH + ';' + [System.Environment]::GetEnvironmentVariable('PATH','Machine');
+
+# Install PowerShell Core and Git
+RUN choco install -y --no-progress git powershell-core
+
+# Set up PATH for PowerShell Core
+ENV PATH="C:\Program Files\PowerShell\7;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;${PATH}"
+
+# Create workspace directory and configure git
+RUN New-Item -ItemType Directory -Force -Path C:\workspace; `
+    git config --global core.autocrlf false; `
+    git config --global core.eol lf; `
+    git config --global core.longpaths true; `
+    git config --global --add safe.directory C:\workspace\bun;
+
+# Clone Bun repository to get bootstrap script
+WORKDIR C:\workspace
+RUN git clone https://github.com/oven-sh/bun.git C:\workspace\bun
+WORKDIR C:\workspace\bun
+
+# Bust cache if bootstrap script changes
+ARG BOOTSTRAP_HASH=unknown
+RUN Write-Host "Bootstrap hash: $env:BOOTSTRAP_HASH"
+
+# Run bootstrap with minimal patches - just fix what breaks in containers
+RUN git pull; `
+    $bootstrapPath = '.\scripts\bootstrap.ps1'; `
+    $content = Get-Content $bootstrapPath -Raw; `
+    $content = $content -replace '"--passive"', '"--quiet"'; `
+    Set-Content -Path $bootstrapPath -Value $content; `
+    pwsh -ExecutionPolicy Bypass -File $bootstrapPath -Optimize:$false; `
+    git checkout $bootstrapPath; `
+    refreshenv;
+
+# Install additional VS components that --includeRecommended doesn't include in containers
+RUN & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe' modify `
+      --installPath 'C:\Program Files\Microsoft Visual Studio\2022\Community' `
+      --add Microsoft.VisualStudio.Component.Windows11SDK.22621 `
+      --add Microsoft.VisualStudio.Component.Windows10SDK `
+      --quiet --norestart --wait; `
+    refreshenv;
+
+# Reload environment and add SDK bin to PATH
+RUN $sdkBin = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' -Recurse -Filter 'rc.exe' -ErrorAction SilentlyContinue | `
+      Where-Object { $_.Directory.Name -eq 'x64' } | `
+      Select-Object -First 1 | ForEach-Object { $_.Directory.FullName }; `
+    if ($sdkBin) { [System.Environment]::SetEnvironmentVariable('SDK_BIN', $sdkBin, 'Machine') }; `
+    refreshenv;
+
+# Add SDK bin to PATH via ENV so CMake can find rc.exe and mt.exe
+ENV PATH="${SDK_BIN};${PATH}"
+ENV BUN_NO_CORE_DUMP=1
+
+# Stage 2: Base - bootstrap environment + specific Bun commit
+FROM bootstrap AS base
+
+# Bust cache when Bun code changes
+ARG GIT_SHA=unknown
+RUN Write-Host "Bun SHA: $env:GIT_SHA"
+
+WORKDIR C:\workspace\bun
+
+# Update to specific commit
+RUN git pull
+
+# Stage 3: Prebuilt - base + built Bun binary
+FROM base AS prebuilt
+
+# Set build environment variables for Windows
+ENV ENABLE_ZIG_ASAN=0
+ENV BUN_DEBUG_QUIET_LOGS=1
+ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
+ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
+
+# Build Bun
+RUN $env:PATH = $env:PATH + ';' + [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';C:\Users\ContainerAdministrator\.bun\bin'; `
+    bun run build; `
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\Users\ContainerAdministrator\AppData\Local\Temp\*;
+
+# Test that the binary works
+RUN C:\workspace\bun\build\debug\bun-debug.exe --version
+
+CMD ["powershell.exe"]
+
+# Minimal stage for extracting build artifacts
+# Note: Windows doesn't support FROM scratch, so we use the base Windows image
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2022 AS artifacts
+COPY --from=prebuilt C:\workspace\bun\build C:\build
+
+FROM prebuilt as run
+
+RUN New-Item -ItemType Directory -Force -Path C:\workspace\cwd
+VOLUME C:\workspace\cwd
+WORKDIR C:\workspace\cwd
+
+ENTRYPOINT ["C:\\workspace\\bun\\build\\debug\\bun-debug.exe"]

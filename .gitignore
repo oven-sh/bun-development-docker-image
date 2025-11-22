@@ -1,2 +1,3 @@
 bun-build-artifacts
 *.tar.gz
+temp-bun-check/
