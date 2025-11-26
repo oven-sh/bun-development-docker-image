@@ -124,168 +124,233 @@ jobs:
       # === BOOTSTRAP STAGE ===
       # important to cache as its really big, so it will allow `docker pull` on external users to be faster
       - name: Pull bootstrap cache
-        run: docker pull ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} || true
-        shell: pwsh
+        continue-on-error: true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 1
+          shell: pwsh
+          command: docker pull ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
 
       - name: Build bootstrap stage
-        run: |
-          docker build `
-            --isolation=process `
-            --memory 14g `
-            --pull `
-            --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-            -f Dockerfile.windows `
-            --target bootstrap `
-            --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64 `
-            -t ghcr.io/${{ github.repository }}-windows:bootstrap `
-            .
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 80
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --memory 14g `
+              --pull `
+              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              -f Dockerfile.windows `
+              --target bootstrap `
+              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64 `
+              -t ghcr.io/${{ github.repository }}-windows:bootstrap `
+              .
 
       - name: Push bootstrap stage
-        run: |
-          docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
-          docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64
-          docker push ghcr.io/${{ github.repository }}-windows:bootstrap
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 120
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
+            docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64
+            docker push ghcr.io/${{ github.repository }}-windows:bootstrap
 
       # === BASE STAGE ===
       - name: Pull base cache
-        run: docker pull ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} || true
-        shell: pwsh
+        continue-on-error: true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 1
+          shell: pwsh
+          command: docker pull ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
 
       - name: Build base stage
-        run: |
-          docker build `
-            --isolation=process `
-            --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-            --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
-            -f Dockerfile.windows `
-            --target base `
-            --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:base-amd64 `
-            -t ghcr.io/${{ github.repository }}-windows:base `
-            .
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
+              -f Dockerfile.windows `
+              --target base `
+              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:base-amd64 `
+              -t ghcr.io/${{ github.repository }}-windows:base `
+              .
 
       - name: Push base stage
-        run: |
-          docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
-          docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:base-amd64
-          docker push ghcr.io/${{ github.repository }}-windows:base
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:base-amd64
+            docker push ghcr.io/${{ github.repository }}-windows:base
 
       # === PREBUILT STAGE ===
       - name: Pull prebuilt cache
-        run: docker pull ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} || true
-        shell: pwsh
+        continue-on-error: true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 1
+          shell: pwsh
+          command: docker pull ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
 
       - name: Build prebuilt stage
-        run: |
-          docker build `
-            --isolation=process `
-            --memory 14g `
-            --cpu-quota="300000" `
-            --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-            --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
-            -f Dockerfile.windows `
-            --target prebuilt `
-            --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64 `
-            -t ghcr.io/${{ github.repository }}-windows:prebuilt `
-            .
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 80
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --memory 14g `
+              --cpu-quota="300000" `
+              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
+              -f Dockerfile.windows `
+              --target prebuilt `
+              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64 `
+              -t ghcr.io/${{ github.repository }}-windows:prebuilt `
+              .
 
       - name: Push prebuilt stage
-        run: |
-          docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
-          docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64
-          docker push ghcr.io/${{ github.repository }}-windows:prebuilt
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64
+            docker push ghcr.io/${{ github.repository }}-windows:prebuilt
 
       # === ARTIFACTS STAGE ===
       - name: Pull artifacts cache
-        run: docker pull ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} || true
-        shell: pwsh
+        continue-on-error: true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 1
+          shell: pwsh
+          command: docker pull ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
 
       - name: Build artifacts stage
-        run: |
-          docker build `
-            --isolation=process `
-            --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-            --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
-            -f Dockerfile.windows `
-            --target artifacts `
-            --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64 `
-            -t ghcr.io/${{ github.repository }}-windows:artifacts `
-            .
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
+              -f Dockerfile.windows `
+              --target artifacts `
+              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64 `
+              -t ghcr.io/${{ github.repository }}-windows:artifacts `
+              .
 
       - name: Push artifacts stage
-        run: |
-          docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
-          docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64
-          docker push ghcr.io/${{ github.repository }}-windows:artifacts
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64
+            docker push ghcr.io/${{ github.repository }}-windows:artifacts
 
       # === RUN STAGE ===
       - name: Pull run cache
-        run: docker pull ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} || true
-        shell: pwsh
+        continue-on-error: true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 1
+          shell: pwsh
+          command: docker pull ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
 
       - name: Build run stage
-        run: |
-          docker build `
-            --isolation=process `
-            --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-            --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
-            -f Dockerfile.windows `
-            --target run `
-            --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            --cache-from ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
-            -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }} `
-            -t ghcr.io/${{ github.repository }}-windows:run-amd64 `
-            -t ghcr.io/${{ github.repository }}-windows:run `
-            -t ghcr.io/${{ github.repository }}-windows:latest `
-            .
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
+              -f Dockerfile.windows `
+              --target run `
+              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              --cache-from ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }} `
+              -t ghcr.io/${{ github.repository }}-windows:run-amd64 `
+              -t ghcr.io/${{ github.repository }}-windows:run `
+              -t ghcr.io/${{ github.repository }}-windows:latest `
+              .
 
       - name: Push run stage
-        run: |
-          docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
-          docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }}
-          docker push ghcr.io/${{ github.repository }}-windows:run-amd64
-          docker push ghcr.io/${{ github.repository }}-windows:run
-          docker push ghcr.io/${{ github.repository }}-windows:latest
-        shell: pwsh
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }}
+            docker push ghcr.io/${{ github.repository }}-windows:run-amd64
+            docker push ghcr.io/${{ github.repository }}-windows:run
+            docker push ghcr.io/${{ github.repository }}-windows:latest
 
       # === TEST ===
       - name: Test prebuilt container
