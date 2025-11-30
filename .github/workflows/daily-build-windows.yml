@@ -125,18 +125,15 @@ jobs:
       # important to cache as its really big, so it will allow `docker pull` on external users to be faster
       - name: Pull bootstrap cache
         continue-on-error: true
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 30
-          max_attempts: 1
-          shell: pwsh
-          command: docker pull ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
+        timeout-minutes: 30
+        shell: pwsh
+        run: try { docker pull ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} } catch { }
 
       - name: Build bootstrap stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 80
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker build `
@@ -156,7 +153,7 @@ jobs:
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 120
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
@@ -166,18 +163,15 @@ jobs:
       # === BASE STAGE ===
       - name: Pull base cache
         continue-on-error: true
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 1
-          shell: pwsh
-          command: docker pull ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: try { docker pull ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
 
       - name: Build base stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 10
           shell: pwsh
           command: |
             docker build `
@@ -199,7 +193,7 @@ jobs:
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
@@ -211,18 +205,15 @@ jobs:
       # === PREBUILT STAGE ===
       - name: Pull prebuilt cache
         continue-on-error: true
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 1
-          shell: pwsh
-          command: docker pull ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: try { docker pull ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
 
       - name: Build prebuilt stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 80
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker build `
@@ -247,7 +238,7 @@ jobs:
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
@@ -259,18 +250,15 @@ jobs:
       # === ARTIFACTS STAGE ===
       - name: Pull artifacts cache
         continue-on-error: true
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 1
-          shell: pwsh
-          command: docker pull ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: try { docker pull ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
 
       - name: Build artifacts stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker build `
@@ -294,7 +282,7 @@ jobs:
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
@@ -306,18 +294,15 @@ jobs:
       # === RUN STAGE ===
       - name: Pull run cache
         continue-on-error: true
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 1
-          shell: pwsh
-          command: docker pull ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: try { docker pull ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
 
       - name: Build run stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker build `
@@ -342,7 +327,7 @@ jobs:
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 3
+          max_attempts: 5
           shell: pwsh
           command: |
             docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
