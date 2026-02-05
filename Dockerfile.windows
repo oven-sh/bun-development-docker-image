@@ -75,6 +75,12 @@ WORKDIR C:\workspace\bun
 # Update to specific commit
 RUN git pull
 
+# Pre-install node_modules to fix CMake race condition
+# The codegen scripts need @lezer/lr and other packages installed BEFORE cmake runs
+RUN $env:PATH = $env:PATH + ';' + [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';C:\Users\ContainerAdministrator\.bun\bin'; `
+    bun install --frozen-lockfile; `
+    bun install --cwd src/node-fallbacks;
+
 # Stage 3: Prebuilt - base + built Bun binary
 FROM base AS prebuilt
 
@@ -84,7 +90,7 @@ ENV BUN_DEBUG_QUIET_LOGS=1
 ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
 ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
 
-# Build Bun
+# Build Bun (node_modules already installed in base stage)
 RUN $env:PATH = $env:PATH + ';' + [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';C:\Users\ContainerAdministrator\.bun\bin'; `
     bun run build; `
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\Users\ContainerAdministrator\AppData\Local\Temp\*;
