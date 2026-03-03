@@ -2,7 +2,7 @@ name: Daily Docker Build
 
 on:
   schedule:
-    - cron: "0 13 * * *" # Run daily at 8:00am Pacific Time (UTC-8)
+    - cron: "0 13 * * *" # Run daily at 5:00am Pacific Time (UTC-8)
   workflow_dispatch: # Allow manual triggering
 
 jobs:
