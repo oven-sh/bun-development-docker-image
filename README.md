@@ -35,6 +35,20 @@ This image includes everything in the base image, plus:
 
 - Pre-compiled build artifacts from running `bun run build`
 
+### Heavy Image
+
+```bash
+docker pull ghcr.io/oven-sh/bun-development-docker-image:heavy
+```
+
+The "everything" image for automated agent / fuzzer work. On top of `:prebuilt`:
+
+- `gh` CLI
+- redis, postgres, mariadb (Bun's test suite needs these)
+- `vendor/WebKit` source cloned at the matching commit
+- Swift toolchain + Fuzzilli built in `/opt/fuzzilli`
+- A second Bun build at `build/debug-fuzz/bun-debug` with `ENABLE_FUZZILLI=ON` and Zig ASAN
+
 ### Running the Container
 
 ```bash
@@ -69,8 +83,10 @@ docker run -it --rm -v $(pwd):/workspace/local ghcr.io/oven-sh/bun-development-d
 
 - `latest`: Multi-platform base development image
 - `prebuilt`: Multi-platform image with pre-built artifacts
+- `heavy`: `:prebuilt` + gh CLI, databases, WebKit src, Swift+Fuzzilli, ASAN fuzz build
 - `YYYY-MM-DD`: Date-specific base development image
 - `prebuilt-YYYY-MM-DD`: Date-specific image with pre-built artifacts
+- `heavy-YYYY-MM-DD`: Date-specific heavy image
 
 ## Build Artifacts
 
@@ -87,3 +103,7 @@ docker build -t bun-dev:local --target base .
 # Build pre-built image
 docker build -t bun-dev:prebuilt --target prebuilt .
 ```
+
+# Build heavy image (needs :prebuilt to exist locally or be pullable)
+
+docker build -f Dockerfile.heavy -t bun-dev:heavy .

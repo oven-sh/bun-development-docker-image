@@ -2,7 +2,7 @@ name: Daily Docker Build
 
 on:
   schedule:
-    - cron: "0 16 * * *" # Run daily at 8:00am Pacific Time (UTC-8)
+    - cron: "0 13 * * *" # Run daily at 8:00am Pacific Time (UTC-8)
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -246,6 +246,100 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
+  # Build AMD64 heavy image
+  build-amd64-heavy:
+    runs-on: ubuntu-latest
+    needs: build-amd64-prebuilt
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push AMD64 heavy image
+        uses: docker/build-push-action@v5
+        timeout-minutes: 180 # Swift + Fuzzilli + ASAN build takes a while
+        with:
+          context: .
+          file: Dockerfile.heavy
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:heavy-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:heavy-amd64
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-amd64
+            SWIFT_ARCH=x86_64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build ARM64 heavy image
+  build-arm64-heavy:
+    runs-on: ubuntu-24.04-arm
+    needs: build-arm64-prebuilt
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ARM64 heavy image
+        uses: docker/build-push-action@v5
+        timeout-minutes: 180
+        with:
+          context: .
+          file: Dockerfile.heavy
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:heavy-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:heavy-arm64
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-arm64
+            SWIFT_ARCH=aarch64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # Create multi-platform images
   create-multiplatform-images:
     needs:
@@ -254,6 +348,8 @@ jobs:
         build-arm64-base,
         build-amd64-prebuilt,
         build-arm64-prebuilt,
+        build-amd64-heavy,
+        build-arm64-heavy,
       ]
     runs-on: ubuntu-latest
     permissions:
@@ -297,6 +393,15 @@ jobs:
             ghcr.io/${{ github.repository }}:prebuilt-amd64 \
             ghcr.io/${{ github.repository }}:prebuilt-arm64
 
+      # Create multi-platform heavy images
+      - name: Create and push multi-platform heavy image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository }}:heavy-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:heavy \
+            ghcr.io/${{ github.repository }}:heavy-amd64 \
+            ghcr.io/${{ github.repository }}:heavy-arm64
+
       - name: Create and push multi-platform run image
         run: |
           docker buildx imagetools create \
@@ -308,7 +413,8 @@ jobs:
 
   # Create multi-platform artifacts images
   create-multiplatform-artifacts:
-    needs: [build-amd64-prebuilt, build-arm64-prebuilt, create-multiplatform-images]
+    needs:
+      [build-amd64-prebuilt, build-arm64-prebuilt, create-multiplatform-images]
     runs-on: ubuntu-latest
     permissions:
       contents: read
