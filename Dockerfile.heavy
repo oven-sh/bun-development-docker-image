@@ -57,18 +57,16 @@ RUN cd /workspace/bun && \
 
 # --- Swift toolchain ---------------------------------------------------------
 #
-# SWIFT_ARCH is set per-job in CI (aarch64 on arm runners, x86_64 on amd).
-# Debian Trixie isn't a first-class Swift target but debian12 builds work.
+# Swift's URL scheme is inconsistent: x86_64 debian12 builds have NO arch
+# suffix in the path, but aarch64 builds DO. We derive the path slug instead
+# of the arch name.
 
 ARG SWIFT_VERSION=6.1
-ARG SWIFT_ARCH
-RUN if [ -z "$SWIFT_ARCH" ]; then \
-        case "$(uname -m)" in \
-            aarch64|arm64) SWIFT_ARCH=aarch64 ;; \
-            *)             SWIFT_ARCH=x86_64 ;; \
-        esac; \
-    fi && \
-    curl -fsSL "https://download.swift.org/swift-${SWIFT_VERSION}-release/debian12-${SWIFT_ARCH}/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-debian12-${SWIFT_ARCH}.tar.gz" \
+RUN case "$(uname -m)" in \
+        aarch64|arm64) SWIFT_SLUG="debian12-aarch64" ;; \
+        *)             SWIFT_SLUG="debian12" ;; \
+    esac && \
+    curl -fsSL "https://download.swift.org/swift-${SWIFT_VERSION}-release/${SWIFT_SLUG}/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-${SWIFT_SLUG}.tar.gz" \
     | tar xz --strip-components=2 -C /usr
 
 # --- Fuzzilli ----------------------------------------------------------------

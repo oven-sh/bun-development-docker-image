@@ -289,7 +289,6 @@ jobs:
             ghcr.io/${{ github.repository }}:heavy-amd64
           build-args: |
             BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-amd64
-            SWIFT_ARCH=x86_64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -336,7 +335,6 @@ jobs:
             ghcr.io/${{ github.repository }}:heavy-arm64
           build-args: |
             BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-arm64
-            SWIFT_ARCH=aarch64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
