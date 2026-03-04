@@ -40,7 +40,7 @@ fi
 if [[ -n "${GH_TOKEN:-}" ]]; then
   _log "configuring git auth"
   git config --global user.name "${GIT_USER:-robobun}"
-  git config --global user.email "${GIT_EMAIL:-robobun@oven.sh}"
+  git config --global user.email "${GIT_EMAIL:-bot@oven.sh}"
   git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
   echo "$GH_TOKEN" | gh auth login --with-token 2>/dev/null || _log "gh auth login failed (continuing)"
 else
