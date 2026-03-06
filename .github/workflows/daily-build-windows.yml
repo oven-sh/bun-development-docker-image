@@ -5,12 +5,21 @@ on:
     - cron: "0 16 * * *" # Run daily at 8:00am Pacific Time (UTC-8)
   workflow_dispatch: # Allow manual triggering
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-windows
+
 jobs:
-  build-windows:
+  # Job 1: Build bootstrap stage (Visual Studio, SDK, tools)
+  # This is cached based on the bootstrap script hash
+  build-bootstrap:
     runs-on: windows-2022
     permissions:
       contents: read
       packages: write
+    outputs:
+      bootstrap_hash: ${{ steps.bootstrap-hash.outputs.HASH }}
+      date: ${{ steps.date.outputs.DATE }}
 
     steps:
       - name: Checkout repository
@@ -18,7 +27,7 @@ jobs:
 
       - name: Set date
         id: date
-        run: echo "DATE=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_ENV
+        run: echo "DATE=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
       - name: Get bootstrap script hash
@@ -31,16 +40,6 @@ jobs:
           echo "HASH=$shortHash" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
-      - name: Get Bun repo commit SHA
-        id: bun-sha
-        run: |
-          $sha = gh api repos/oven-sh/bun/commits/main --jq .sha
-          $shortSha = $sha.Substring(0, 7)
-          echo "SHA=$shortSha" >> $env:GITHUB_OUTPUT
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -48,9 +47,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # clear some space on windows runner
-      # https://github.com/hugoalh/disk-space-optimizer-ghaction/blob/main/list.yml
-      - name: Clear some space on windows runner
+      - name: Check if bootstrap image exists
+        id: check-bootstrap
+        run: |
+          $exists = $false
+          try {
+            docker manifest inspect ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} 2>$null
+            $exists = $true
+          } catch { }
+          echo "EXISTS=$exists" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # Only run cleanup and build if bootstrap doesn't exist
+      - name: Clear disk space
+        if: steps.check-bootstrap.outputs.EXISTS != 'True'
         run: |
           $disk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
           $totalGB = [math]::Round($disk.Size / 1GB, 2)
@@ -58,6 +68,7 @@ jobs:
           $usedPercent = [math]::Round((($disk.Size - $disk.FreeSpace) / $disk.Size) * 100, 1)
           Write-Host "Disk space before cleanup: $usedGB GB used / $totalGB GB total ($usedPercent%)" -ForegroundColor Yellow
 
+          # Aggressively clean to make room for Visual Studio install
           $paths = @(
             "C:\Program Files\dotnet",
             "C:\Program Files (x86)\dotnet",
@@ -67,7 +78,6 @@ jobs:
             "$Env:AGENT_TOOLSDIRECTORY\CodeQL",
             "$Env:AGENT_TOOLSDIRECTORY\Ruby",
             "$Env:AGENT_TOOLSDIRECTORY\go",
-            # "$Env:AGENT_TOOLSDIRECTORY\node",
             "$Env:AGENT_TOOLSDIRECTORY\Python",
             "$Env:AGENT_TOOLSDIRECTORY\PyPy",
             "$Env:AGENT_TOOLSDIRECTORY\stack",
@@ -102,12 +112,16 @@ jobs:
             if (Test-Path $path) {
               try {
                 [System.IO.Directory]::Delete($path, $true)
-              } catch { }
+                Write-Host "Deleted: $path"
+              } catch {
+                Write-Host "Could not delete: $path"
+              }
             }
           }
           Get-ChildItem "$Env:AGENT_TOOLSDIRECTORY" -Filter "Java*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
             try {
               [System.IO.Directory]::Delete($_.FullName, $true)
+              Write-Host "Deleted: $($_.FullName)"
             } catch { }
           }
           try {
@@ -115,25 +129,33 @@ jobs:
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$env:TEMP\*"
           } catch { }
 
+          # Clean Docker to free up space
+          docker system prune -af 2>$null
+
           $diskAfter = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
           $usedGBAfter = [math]::Round(($diskAfter.Size - $diskAfter.FreeSpace) / 1GB, 2)
           $reclaimedGB = [math]::Round(($usedGB - $usedGBAfter), 2)
           Write-Host "Reclaimed $reclaimedGB GB of disk space" -ForegroundColor Green
         shell: pwsh
 
-      # === BOOTSTRAP STAGE ===
-      # important to cache as its really big, so it will allow `docker pull` on external users to be faster
-      - name: Pull bootstrap cache
-        continue-on-error: true
-        timeout-minutes: 30
+      - name: Disable Windows Defender real-time monitoring
+        if: steps.check-bootstrap.outputs.EXISTS != 'True'
+        run: |
+          # Disable real-time monitoring to speed up builds
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          # Add exclusions for build directories
+          Add-MpPreference -ExclusionPath "C:\ProgramData\docker"
+          Add-MpPreference -ExclusionPath "D:\a"
+          Add-MpPreference -ExclusionProcess "docker.exe"
+          Add-MpPreference -ExclusionProcess "dockerd.exe"
         shell: pwsh
-        run: try { docker pull ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} } catch { }
 
       - name: Build bootstrap stage
+        if: steps.check-bootstrap.outputs.EXISTS != 'True'
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 80
-          max_attempts: 5
+          timeout_minutes: 120
+          max_attempts: 3
           shell: pwsh
           command: |
             docker build `
@@ -143,205 +165,266 @@ jobs:
               --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
               -f Dockerfile.windows `
               --target bootstrap `
-              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              -t ghcr.io/${{ github.repository }}-windows:bootstrap-amd64 `
-              -t ghcr.io/${{ github.repository }}-windows:bootstrap `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64 `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:bootstrap `
               .
 
       - name: Push bootstrap stage
+        if: steps.check-bootstrap.outputs.EXISTS != 'True'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 120
           max_attempts: 5
           shell: pwsh
           command: |
-            docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
-            docker push ghcr.io/${{ github.repository }}-windows:bootstrap-amd64
-            docker push ghcr.io/${{ github.repository }}-windows:bootstrap
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:bootstrap
 
-      # === BASE STAGE ===
-      - name: Pull base cache
-        continue-on-error: true
-        timeout-minutes: 15
+      - name: Bootstrap already cached
+        if: steps.check-bootstrap.outputs.EXISTS == 'True'
+        run: |
+          Write-Host "Bootstrap image already exists for hash ${{ steps.bootstrap-hash.outputs.HASH }}, skipping build" -ForegroundColor Green
         shell: pwsh
-        run: try { docker pull ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
+
+  # Job 2: Build prebuilt stage (compile Bun)
+  build-prebuilt:
+    runs-on: windows-2022
+    needs: build-bootstrap
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get Bun repo commit SHA
+        id: bun-sha
+        run: |
+          $sha = gh api repos/oven-sh/bun/commits/main --jq .sha
+          $shortSha = $sha.Substring(0, 7)
+          echo "SHA=$shortSha" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clear disk space
+        run: |
+          $disk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
+          $totalGB = [math]::Round($disk.Size / 1GB, 2)
+          $usedGB = [math]::Round(($disk.Size - $disk.FreeSpace) / 1GB, 2)
+          Write-Host "Disk space before cleanup: $usedGB GB used / $totalGB GB total" -ForegroundColor Yellow
+
+          $paths = @(
+            "C:\Program Files\dotnet",
+            "C:\Program Files (x86)\dotnet",
+            "C:\Android",
+            "C:\Program Files (x86)\Android",
+            "$Env:AGENT_TOOLSDIRECTORY\CodeQL",
+            "$Env:AGENT_TOOLSDIRECTORY\Ruby",
+            "$Env:AGENT_TOOLSDIRECTORY\go",
+            "$Env:AGENT_TOOLSDIRECTORY\Python",
+            "$Env:AGENT_TOOLSDIRECTORY\PyPy",
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\Rust",
+            "C:\vcpkg",
+            "C:\msys64",
+            "C:\Strawberry",
+            "C:\Program Files\Mozilla Firefox",
+            "C:\Julia",
+            "C:\Miniconda",
+            "C:\Program Files\R",
+            "C:\Program Files\Microsoft SQL Server"
+          )
+          foreach ($path in $paths) {
+            if (Test-Path $path) {
+              try { [System.IO.Directory]::Delete($path, $true) } catch { }
+            }
+          }
+          Get-ChildItem "$Env:AGENT_TOOLSDIRECTORY" -Filter "Java*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            try { [System.IO.Directory]::Delete($_.FullName, $true) } catch { }
+          }
+
+          docker system prune -af 2>$null
+
+          $diskAfter = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
+          $usedGBAfter = [math]::Round(($diskAfter.Size - $diskAfter.FreeSpace) / 1GB, 2)
+          Write-Host "Reclaimed $([math]::Round(($usedGB - $usedGBAfter), 2)) GB" -ForegroundColor Green
+        shell: pwsh
+
+      - name: Disable Windows Defender real-time monitoring
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Add-MpPreference -ExclusionPath "C:\ProgramData\docker"
+          Add-MpPreference -ExclusionPath "D:\a"
+          Add-MpPreference -ExclusionProcess "docker.exe"
+          Add-MpPreference -ExclusionProcess "dockerd.exe"
+        shell: pwsh
+
+      - name: Pull bootstrap image
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 45
+          max_attempts: 5
+          shell: pwsh
+          command: |
+            docker pull ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ needs.build-bootstrap.outputs.bootstrap_hash }}
 
       - name: Build base stage
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 15
-          max_attempts: 10
+          timeout_minutes: 20
+          max_attempts: 5
           shell: pwsh
           command: |
             docker build `
               --isolation=process `
-              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg BOOTSTRAP_HASH=${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
               --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
               -f Dockerfile.windows `
               --target base `
-              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:base-amd64 `
-              -t ghcr.io/${{ github.repository }}-windows:base `
+              --cache-from ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:base-amd64-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:base-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:base-amd64 `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:base `
               .
 
       - name: Push base stage
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 5
-          shell: pwsh
-          command: |
-            docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }}
-            docker push ghcr.io/${{ github.repository }}-windows:base-amd64-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:base-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:base-amd64
-            docker push ghcr.io/${{ github.repository }}-windows:base
-
-      # === PREBUILT STAGE ===
-      - name: Pull prebuilt cache
-        continue-on-error: true
-        timeout-minutes: 15
-        shell: pwsh
-        run: try { docker pull ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
-
-      - name: Build prebuilt stage
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 80
-          max_attempts: 5
-          shell: pwsh
-          command: |
-            docker build `
-              --isolation=process `
-              --memory 14g `
-              --cpu-quota="300000" `
-              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
-              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
-              -f Dockerfile.windows `
-              --target prebuilt `
-              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:prebuilt-amd64 `
-              -t ghcr.io/${{ github.repository }}-windows:prebuilt `
-              .
-
-      - name: Push prebuilt stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
           max_attempts: 5
           shell: pwsh
           command: |
-            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
-            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:prebuilt-amd64
-            docker push ghcr.io/${{ github.repository }}-windows:prebuilt
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:base-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:base-amd64-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:base-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:base-amd64
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:base
 
-      # === ARTIFACTS STAGE ===
-      - name: Pull artifacts cache
-        continue-on-error: true
-        timeout-minutes: 15
-        shell: pwsh
-        run: try { docker pull ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
+      - name: Build prebuilt stage
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 120
+          max_attempts: 3
+          shell: pwsh
+          command: |
+            docker build `
+              --isolation=process `
+              --memory 14g `
+              --cpu-quota="300000" `
+              --build-arg BOOTSTRAP_HASH=${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
+              --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
+              -f Dockerfile.windows `
+              --target prebuilt `
+              --cache-from ghcr.io/${{ env.IMAGE_NAME }}:bootstrap-amd64-${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
+              --cache-from ghcr.io/${{ env.IMAGE_NAME }}:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64 `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:prebuilt `
+              .
+
+      - name: Push prebuilt stage
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 60
+          max_attempts: 5
+          shell: pwsh
+          command: |
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:prebuilt
 
       - name: Build artifacts stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 5
+          max_attempts: 3
           shell: pwsh
           command: |
             docker build `
               --isolation=process `
-              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg BOOTSTRAP_HASH=${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
               --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
               -f Dockerfile.windows `
               --target artifacts `
-              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:artifacts-amd64 `
-              -t ghcr.io/${{ github.repository }}-windows:artifacts `
+              --cache-from ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:artifacts-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64 `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:artifacts `
               .
 
       - name: Push artifacts stage
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 15
+          timeout_minutes: 30
           max_attempts: 5
           shell: pwsh
           command: |
-            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
-            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:artifacts-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:artifacts-amd64
-            docker push ghcr.io/${{ github.repository }}-windows:artifacts
-
-      # === RUN STAGE ===
-      - name: Pull run cache
-        continue-on-error: true
-        timeout-minutes: 15
-        shell: pwsh
-        run: try { docker pull ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} } catch { }
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:artifacts-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:artifacts-amd64
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:artifacts
 
       - name: Build run stage
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 5
+          max_attempts: 3
           shell: pwsh
           command: |
             docker build `
               --isolation=process `
-              --build-arg BOOTSTRAP_HASH=${{ steps.bootstrap-hash.outputs.HASH }} `
+              --build-arg BOOTSTRAP_HASH=${{ needs.build-bootstrap.outputs.bootstrap_hash }} `
               --build-arg GIT_SHA=${{ steps.bun-sha.outputs.SHA }} `
               -f Dockerfile.windows `
               --target run `
-              --cache-from ghcr.io/${{ github.repository }}-windows:bootstrap-amd64-${{ steps.bootstrap-hash.outputs.HASH }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:base-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              --cache-from ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
-              -t ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }} `
-              -t ghcr.io/${{ github.repository }}-windows:run-amd64 `
-              -t ghcr.io/${{ github.repository }}-windows:run `
-              -t ghcr.io/${{ github.repository }}-windows:latest `
+              --cache-from ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:run-amd64-${{ steps.bun-sha.outputs.SHA }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:run-amd64-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:run-${{ needs.build-bootstrap.outputs.date }} `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:run-amd64 `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:run `
+              -t ghcr.io/${{ env.IMAGE_NAME }}:latest `
               .
 
       - name: Push run stage
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 15
+          timeout_minutes: 30
           max_attempts: 5
           shell: pwsh
           command: |
-            docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ steps.bun-sha.outputs.SHA }}
-            docker push ghcr.io/${{ github.repository }}-windows:run-amd64-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:run-${{ env.DATE }}
-            docker push ghcr.io/${{ github.repository }}-windows:run-amd64
-            docker push ghcr.io/${{ github.repository }}-windows:run
-            docker push ghcr.io/${{ github.repository }}-windows:latest
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:run-amd64-${{ steps.bun-sha.outputs.SHA }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:run-amd64-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:run-${{ needs.build-bootstrap.outputs.date }}
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:run-amd64
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:run
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-      # === TEST ===
       - name: Test prebuilt container
         run: |
           @"
-            FROM ghcr.io/${{ github.repository }}-windows:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
+            FROM ghcr.io/${{ env.IMAGE_NAME }}:prebuilt-amd64-${{ steps.bun-sha.outputs.SHA }}
             RUN C:\workspace\bun\build\debug\bun-debug.exe --version
             CMD ["C:\\workspace\\bun\\build\\debug\\bun-debug.exe", "--version"]
           "@ | Out-File -FilePath Dockerfile.test -Encoding utf8
