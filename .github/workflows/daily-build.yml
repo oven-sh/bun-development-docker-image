@@ -6,8 +6,18 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 jobs:
+  # Compute DATE once so all jobs agree even if the workflow spans midnight UTC.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.date.outputs.date }}
+    steps:
+      - id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
   # Build AMD64 base image
   build-amd64-base:
+    needs: setup
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -16,10 +26,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -44,7 +50,7 @@ jobs:
           target: base
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}:base-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:base-amd64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:base-amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -56,6 +62,7 @@ jobs:
 
   # Build ARM64 base image
   build-arm64-base:
+    needs: setup
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -64,10 +71,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -92,7 +95,7 @@ jobs:
           target: base
           platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:base-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:base-arm64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:base-arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -105,7 +108,7 @@ jobs:
   # Build AMD64 prebuilt image
   build-amd64-prebuilt:
     runs-on: ubuntu-latest
-    needs: build-amd64-base
+    needs: [setup, build-amd64-base]
     permissions:
       contents: read
       packages: write
@@ -113,10 +116,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -142,7 +141,7 @@ jobs:
           target: prebuilt
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:prebuilt-amd64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:prebuilt-amd64
           cache-from: type=gha
           build-args: |
@@ -156,7 +155,7 @@ jobs:
           target: artifacts
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}:artifacts-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:artifacts-amd64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:artifacts-amd64
           cache-from: type=gha
 
@@ -168,7 +167,7 @@ jobs:
           target: run
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}:run-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:run-amd64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:run-amd64
           cache-from: type=gha
           build-args: |
@@ -177,7 +176,7 @@ jobs:
   # Build ARM64 prebuilt image
   build-arm64-prebuilt:
     runs-on: ubuntu-24.04-arm
-    needs: build-arm64-base
+    needs: [setup, build-arm64-base]
     permissions:
       contents: read
       packages: write
@@ -185,10 +184,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -214,7 +209,7 @@ jobs:
           target: prebuilt
           platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:prebuilt-arm64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:prebuilt-arm64
           cache-from: type=gha
           build-args: |
@@ -228,7 +223,7 @@ jobs:
           target: artifacts
           platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:artifacts-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:artifacts-arm64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:artifacts-arm64
           cache-from: type=gha
 
@@ -240,7 +235,7 @@ jobs:
           target: run
           platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:run-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:run-arm64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:run-arm64
           cache-from: type=gha
           build-args: |
@@ -249,7 +244,7 @@ jobs:
   # Build AMD64 heavy image
   build-amd64-heavy:
     runs-on: ubuntu-latest
-    needs: build-amd64-prebuilt
+    needs: [setup, build-amd64-prebuilt]
     permissions:
       contents: read
       packages: write
@@ -257,9 +252,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -285,7 +277,7 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}:heavy-amd64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:heavy-amd64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:heavy-amd64
           build-args: |
             BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-amd64
@@ -295,7 +287,7 @@ jobs:
   # Build ARM64 heavy image
   build-arm64-heavy:
     runs-on: ubuntu-24.04-arm
-    needs: build-arm64-prebuilt
+    needs: [setup, build-arm64-prebuilt]
     permissions:
       contents: read
       packages: write
@@ -303,9 +295,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Free disk space
         run: |
@@ -331,7 +320,7 @@ jobs:
           push: true
           platforms: linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:heavy-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:heavy-arm64-${{ needs.setup.outputs.date }}
             ghcr.io/${{ github.repository }}:heavy-arm64
           build-args: |
             BASE_IMAGE=ghcr.io/${{ github.repository }}:prebuilt-arm64
@@ -342,6 +331,7 @@ jobs:
   create-multiplatform-images:
     needs:
       [
+        setup,
         build-amd64-base,
         build-arm64-base,
         build-amd64-prebuilt,
@@ -358,10 +348,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -376,7 +362,7 @@ jobs:
       - name: Create and push multi-platform base image
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/${{ github.repository }}:base-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:base-${{ needs.setup.outputs.date }} \
             -t ghcr.io/${{ github.repository }}:base \
             -t ghcr.io/${{ github.repository }}:latest \
             ghcr.io/${{ github.repository }}:base-amd64 \
@@ -386,7 +372,7 @@ jobs:
       - name: Create and push multi-platform prebuilt image
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/${{ github.repository }}:prebuilt-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:prebuilt-${{ needs.setup.outputs.date }} \
             -t ghcr.io/${{ github.repository }}:prebuilt \
             ghcr.io/${{ github.repository }}:prebuilt-amd64 \
             ghcr.io/${{ github.repository }}:prebuilt-arm64
@@ -395,7 +381,7 @@ jobs:
       - name: Create and push multi-platform heavy image
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/${{ github.repository }}:heavy-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:heavy-${{ needs.setup.outputs.date }} \
             -t ghcr.io/${{ github.repository }}:heavy \
             ghcr.io/${{ github.repository }}:heavy-amd64 \
             ghcr.io/${{ github.repository }}:heavy-arm64
@@ -403,7 +389,7 @@ jobs:
       - name: Create and push multi-platform run image
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/${{ github.repository }}:run-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:run-${{ needs.setup.outputs.date }} \
             -t ghcr.io/${{ github.repository }}:run \
             -t ghcr.io/${{ github.repository }}:latest \
             ghcr.io/${{ github.repository }}:run-amd64 \
@@ -412,7 +398,7 @@ jobs:
   # Create multi-platform artifacts images
   create-multiplatform-artifacts:
     needs:
-      [build-amd64-prebuilt, build-arm64-prebuilt, create-multiplatform-images]
+      [setup, build-amd64-prebuilt, build-arm64-prebuilt, create-multiplatform-images]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -421,10 +407,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -439,7 +421,7 @@ jobs:
       - name: Create and push multi-platform artifacts image
         run: |
           docker buildx imagetools create \
-            -t ghcr.io/${{ github.repository }}:artifacts-${{ env.DATE }} \
+            -t ghcr.io/${{ github.repository }}:artifacts-${{ needs.setup.outputs.date }} \
             -t ghcr.io/${{ github.repository }}:artifacts \
-            ghcr.io/${{ github.repository }}:artifacts-amd64-${{ env.DATE }} \
-            ghcr.io/${{ github.repository }}:artifacts-arm64-${{ env.DATE }}
+            ghcr.io/${{ github.repository }}:artifacts-amd64-${{ needs.setup.outputs.date }} \
+            ghcr.io/${{ github.repository }}:artifacts-arm64-${{ needs.setup.outputs.date }}
