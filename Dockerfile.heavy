@@ -87,6 +87,13 @@ RUN cd /workspace/bun && \
     ENABLE_ZIG_ASAN=ON bun ./scripts/build.mjs -GNinja -DCMAKE_BUILD_TYPE=Debug -DENABLE_FUZZILLI=ON -B build/debug-fuzz --log-level=NOTICE && \
     rm -rf /tmp/*
 
+RUN cd /workspace/bun && \
+    git stash && git pull && \
+    bun install && \
+    bun install --cwd=test --ignore-scripts && \
+    (bun run build || bun run build) && \
+    rm -rf /tmp/*
+
 # --- env for consumers -------------------------------------------------------
 
 ENV FUZZILLI_CLI_PATH=/opt/fuzzilli/.build/release/FuzzilliCli
