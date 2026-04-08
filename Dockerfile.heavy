@@ -47,7 +47,7 @@ RUN mkdir -p /var/lib/postgresql/data /var/lib/mysql /var/lib/redis /var/run/pos
 # the source tree. Agents fixing JSC crashes need it.
 
 RUN cd /workspace/bun && \
-    WEBKIT_COMMIT=$(grep -oP 'set\(WEBKIT_VERSION \K[0-9a-f]+' cmake/tools/SetupWebKit.cmake) && \
+    WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/webkit.ts) && \
     if [ -d vendor/WebKit/.git ]; then \
         cd vendor/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
     else \
@@ -78,17 +78,16 @@ RUN git clone --depth 1 https://github.com/oven-sh/fuzzilli.git /opt/fuzzilli &&
 # --- ASAN + Fuzzilli debug build ---------------------------------------------
 #
 # The normal debug build in :prebuilt is at build/debug/. This is a second
-# build with ENABLE_FUZZILLI=ON and Zig ASAN, at build/debug-fuzz/.
-# The fuzzer targets this binary; agents fixing fuzzer-found crashes
-# reproduce against it.
+# build with fuzzilli enabled and ASAN, at build/debug-fuzz/. The fuzzer
+# targets this binary; agents fixing fuzzer-found crashes reproduce
+# against it.
 
 RUN cd /workspace/bun && \
-    sed -i 's/set(BORINGSSL_CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF)/set(BORINGSSL_CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF)/' cmake/targets/BuildBoringSSL.cmake && \
-    ENABLE_ZIG_ASAN=ON bun ./scripts/build.mjs -GNinja -DCMAKE_BUILD_TYPE=Debug -DENABLE_FUZZILLI=ON -B build/debug-fuzz --log-level=NOTICE && \
+    bun run build:debug:fuzzilli && \
     rm -rf /tmp/*
 
 RUN cd /workspace/bun && \
-    git stash && git pull && \
+    git pull && \
     bun install && \
     bun install --cwd=test --ignore-scripts && \
     (bun run build || bun run build) && \
