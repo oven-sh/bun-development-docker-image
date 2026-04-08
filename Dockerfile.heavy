@@ -6,7 +6,7 @@
 #   - databases               (Bun's test suite needs redis/postgres/mariadb)
 #   - vendor/WebKit source    (JSC crash fixes need the source)
 #   - Swift + Fuzzilli        (fuzzing)
-#   - ASAN+Fuzzilli build     (separate from the normal debug build)
+#   - warm builds             (debug, debug-fuzz, release, release-asan)
 #
 
 # Use ARG so the per-arch CI jobs can point at :prebuilt-amd64 /
@@ -61,6 +61,8 @@ RUN git clone --depth 1 https://github.com/oven-sh/fuzzilli.git /opt/fuzzilli &&
     cd /opt/fuzzilli && \
     swift build -c release
 
+WORKDIR /workspace/bun
+
 # --- refresh source ----------------------------------------------------------
 #
 # :prebuilt's /workspace/bun is from its own build time. Pull before the
@@ -68,8 +70,7 @@ RUN git clone --depth 1 https://github.com/oven-sh/fuzzilli.git /opt/fuzzilli &&
 # all baked build dirs are warm against the same commit. Kept after the
 # Swift/Fuzzilli layers so those stay cached across daily rebuilds.
 
-RUN cd /workspace/bun && \
-    git pull && \
+RUN git pull --ff-only && \
     bun install && \
     bun install --cwd=test --ignore-scripts
 
@@ -78,8 +79,7 @@ RUN cd /workspace/bun && \
 # :prebuilt builds against precompiled WebKit artifacts but doesn't include
 # the source tree. Agents fixing JSC crashes need it.
 
-RUN cd /workspace/bun && \
-    WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/webkit.ts) && \
+RUN WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/webkit.ts) && \
     if [ -d vendor/WebKit/.git ]; then \
         cd vendor/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
     else \
@@ -97,8 +97,7 @@ RUN cd /workspace/bun && \
 #   build/release-asan/ — release + ASAN
 # The retry-once on debug papers over the occasional first-configure flake.
 
-RUN cd /workspace/bun && \
-    (bun run build || bun run build) && \
+RUN (bun run build || bun run build) && \
     bun run build:debug:fuzzilli && \
     bun run build:release && \
     bun run build:asan && \
@@ -114,5 +113,4 @@ ENV BUN_DEBUG_FUZZ=/workspace/bun/build/debug-fuzz/bun-debug
 COPY heavy-start-services.sh /opt/start-services.sh
 RUN chmod +x /opt/start-services.sh
 
-WORKDIR /workspace/bun
 CMD ["/bin/bash"]
