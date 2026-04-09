@@ -6,7 +6,7 @@
 #   - databases               (Bun's test suite needs redis/postgres/mariadb)
 #   - vendor/WebKit source    (JSC crash fixes need the source)
 #   - Swift + Fuzzilli        (fuzzing)
-#   - warm builds             (debug, debug-fuzz, release, release-asan)
+#   - warm builds             (debug, debug-fuzz, release)
 #
 
 # Use ARG so the per-arch CI jobs can point at :prebuilt-amd64 /
@@ -94,13 +94,13 @@ RUN WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/
 #   build/debug/        — debug profile (ASAN on; debug-no-asan is separate)
 #   build/debug-fuzz/   — debug + fuzzilli, fuzzer target
 #   build/release/      — release profile
-#   build/release-asan/ — release + ASAN
-# The retry-once on debug papers over the occasional first-configure flake.
+# release-asan dropped: 4th build OOMs the standard GHA runner. debug
+# already covers ASAN. The retry-once on debug papers over the
+# occasional first-configure flake.
 
 RUN (bun run build || bun run build) && \
     bun run build:debug:fuzzilli && \
     bun run build:release && \
-    bun run build:asan && \
     rm -rf /tmp/*
 
 # --- env for consumers -------------------------------------------------------
