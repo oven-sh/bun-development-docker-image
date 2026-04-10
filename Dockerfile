@@ -102,11 +102,8 @@ ENV BUN_DEBUG_QUIET_LOGS=1
 ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
 ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
 
-# Build only the debug version to save space.
-# --ci forces the stable Zig compiler (no parallel sema / sharded codegen);
-# the parallel-compiler path currently produces an incomplete bun-zig.o on
-# fresh Linux builds and fails at link with every Zig symbol undefined.
-RUN bun run build --ci=true && rm -rf /tmp/*
+# Build only the debug version to save space
+RUN bun run build && rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version
