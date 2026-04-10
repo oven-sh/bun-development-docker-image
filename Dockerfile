@@ -102,8 +102,11 @@ ENV BUN_DEBUG_QUIET_LOGS=1
 ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
 ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
 
-# Build only the debug version to save space
-RUN bun run build && rm -rf /tmp/*
+# Build only the debug version to save space.
+# --ci forces cfg.ci=true so defaultZigCommit() picks the stable compiler;
+# the parallel-sema compiler used for non-CI linux local builds produces a
+# bun-zig.o with no exports (every Bun__* symbol undefined at link).
+RUN bun run build -- --ci && rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version

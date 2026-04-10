@@ -98,9 +98,9 @@ RUN WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/
 # already covers ASAN. The retry-once on debug papers over the
 # occasional first-configure flake.
 
-RUN (bun run build || bun run build) && \
-    bun run build:debug:fuzzilli && \
-    bun run build:release && \
+RUN (bun run build -- --ci || bun run build -- --ci) && \
+    bun run build:debug:fuzzilli -- --ci && \
+    bun run build:release -- --ci && \
     rm -rf /tmp/*
 
 # --- env for consumers -------------------------------------------------------
