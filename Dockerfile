@@ -106,7 +106,7 @@ ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
 # --ci forces the stable Zig compiler (no parallel sema / sharded codegen);
 # the parallel-compiler path currently produces an incomplete bun-zig.o on
 # fresh Linux builds and fails at link with every Zig symbol undefined.
-RUN bun run build --ci && rm -rf /tmp/*
+RUN bun run build --ci=true && rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version
