@@ -103,10 +103,15 @@ ENV BUN_GARBAGE_COLLECTOR_LEVEL=0
 ENV BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING=1
 
 # Build only the debug version to save space.
-# --ci forces the stable Zig compiler (no parallel sema / sharded codegen);
-# the parallel-compiler path currently produces an incomplete bun-zig.o on
-# fresh Linux builds and fails at link with every Zig symbol undefined.
-RUN bun run build --ci=true && rm -rf /tmp/*
+# Pin --zigCommit to the stable compiler (ZIG_COMMIT, not ZIG_COMMIT_PARALLEL):
+# the parallel-compiler path currently installs an incomplete bun-zig.o on
+# fresh Linux builds and fails at link with every Zig symbol undefined
+# (oven-sh/bun#29132). --ci=true also avoids this but disables PCH, which
+# exposes an unrelated -Wundefined-var-template in JSBuffer.cpp.
+RUN ZIG_STABLE=$(grep -oP '^export const ZIG_COMMIT = "\K[a-f0-9]+' scripts/build/zig.ts) && \
+    test -n "$ZIG_STABLE" && \
+    bun run build --zigCommit=$ZIG_STABLE && \
+    rm -rf /tmp/*
 
 # Test that the binary works
 RUN bun-debug --version
