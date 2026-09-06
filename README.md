@@ -45,7 +45,7 @@ The "everything" image for automated agent / fuzzer work. On top of `:prebuilt`:
 
 - `gh` CLI
 - redis, postgres, mariadb (Bun's test suite needs these)
-- `vendor/WebKit` source cloned at the matching commit
+- oven-sh/WebKit cloned at the matching commit into `/workspace/WebKit` (`BUN_WEBKIT_PATH`); bun's build manages `vendor/WebKit` itself
 - Swift toolchain + Fuzzilli built in `/opt/fuzzilli`
 - A second Bun build at `build/debug-fuzz/bun-debug` with `ENABLE_FUZZILLI=ON` and Zig ASAN
 

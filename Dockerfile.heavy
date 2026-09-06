@@ -4,7 +4,7 @@
 #
 #   - gh CLI                  (PRs, issues)
 #   - databases               (Bun's test suite needs redis/postgres/mariadb)
-#   - vendor/WebKit source    (JSC crash fixes need the source)
+#   - /workspace/WebKit clone (JSC crash fixes need the source)
 #   - Swift + Fuzzilli        (fuzzing)
 #   - warm builds             (debug, debug-fuzz, release)
 #
@@ -76,15 +76,19 @@ RUN git pull --ff-only && \
 
 # --- WebKit source -----------------------------------------------------------
 #
-# :prebuilt builds against precompiled WebKit artifacts but doesn't include
-# the source tree. Agents fixing JSC crashes need it.
+# A clone of oven-sh/WebKit at the commit bun pins, for agents fixing JSC
+# crashes. It lives OUTSIDE the checkout: bun's build owns vendor/WebKit
+# (it fetches the pinned commit there itself as a sparse source tree) and
+# refuses to build when it finds a clone with a .git in that path.
+# BUN_WEBKIT_PATH points `bun run build:local` (--local-deps=WebKit) at
+# this clone; the default build does not read it.
 
 RUN WEBKIT_COMMIT=$(grep -oP 'WEBKIT_VERSION = "\K[0-9a-f]+' scripts/build/deps/webkit.ts) && \
-    if [ -d vendor/WebKit/.git ]; then \
-        cd vendor/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
+    if [ -d /workspace/WebKit/.git ]; then \
+        cd /workspace/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
     else \
-        git clone --depth 1 https://github.com/oven-sh/WebKit.git vendor/WebKit && \
-        cd vendor/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
+        git clone --depth 1 https://github.com/oven-sh/WebKit.git /workspace/WebKit && \
+        cd /workspace/WebKit && git fetch --depth 1 origin $WEBKIT_COMMIT && git checkout $WEBKIT_COMMIT; \
     fi
 
 # --- builds ------------------------------------------------------------------
@@ -107,6 +111,7 @@ RUN (bun run build || bun run build) && \
 
 ENV FUZZILLI_CLI_PATH=/opt/fuzzilli/.build/release/FuzzilliCli
 ENV BUN_REPO_PATH=/workspace/bun
+ENV BUN_WEBKIT_PATH=/workspace/WebKit
 ENV BUN_DEBUG_FUZZ=/workspace/bun/build/debug-fuzz/bun-debug
 
 # Shared service startup script — downstream entrypoints source this.
