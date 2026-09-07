@@ -71,7 +71,10 @@ WORKDIR /workspace/bun
 ENV BUN_NO_CORE_DUMP=1
 
 # Bootstrap development environment and prepare build directories
-RUN sh -c "git pull && scripts/bootstrap.sh"
+# --linux-glibc-sysroot: link linux-gnu builds against the same pinned glibc/GCC 13 sysroot as
+# CI (/opt/linux-sysroot-glibc*), so binaries built in the image match CI's — post-link
+# checks included — instead of picking up this image's newer GCC runtime.
+RUN sh -c "git pull && scripts/bootstrap.sh --linux-glibc-sysroot"
 
 # Install the Rust toolchain the checked-out ref actually wants.
 #
