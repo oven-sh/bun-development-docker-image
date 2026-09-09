@@ -2,7 +2,9 @@ name: Daily WebKit Docker Build
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Run daily at 9:00am Japan Time (UTC+9)
+    # Daily, shortly after 9:00am Japan Time (UTC+9). Off the top of the hour
+    # to avoid the :00 scheduling crunch on GitHub-hosted runners.
+    - cron: "20 0 * * *"
   workflow_dispatch: # Allow manual triggering
 
 jobs:
