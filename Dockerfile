@@ -70,8 +70,21 @@ WORKDIR /workspace/bun
 
 ENV BUN_NO_CORE_DUMP=1
 
-# Bootstrap development environment and prepare build directories
-RUN sh -c "git pull && scripts/bootstrap.sh"
+# Bootstrap development environment and prepare build directories.
+#
+# bootstrap.sh pulls LLVM from apt.llvm.org, which intermittently rejects
+# requests from CI runners; llvm.sh then reports either "GPG key not
+# reachable" or the misleading "Distribution 'debian' ... is not supported"
+# (its HEAD probe of apt.llvm.org/<codename>/ failed). bootstrap.sh is
+# idempotent, so retry it a few times with a pause instead of failing the
+# whole multi-hour pipeline on one flaky request.
+RUN git pull && \
+    for attempt in 1 2 3 4; do \
+        scripts/bootstrap.sh && break; \
+        if [ "$attempt" -eq 4 ]; then echo "bootstrap.sh failed after $attempt attempts" >&2; exit 1; fi; \
+        echo "bootstrap.sh failed (attempt $attempt), retrying in 60s..." >&2; \
+        sleep 60; \
+    done
 
 # Install the Rust toolchain the checked-out ref actually wants.
 #
