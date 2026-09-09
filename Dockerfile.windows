@@ -15,8 +15,24 @@ RUN Set-ExecutionPolicy Bypass -Scope Process -Force; `
 # Install PowerShell Core and Git
 RUN choco install -y --no-progress git powershell-core
 
-# Set up PATH for PowerShell Core
-ENV PATH="C:\Program Files\PowerShell\7;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;${PATH}"
+# Make sure pwsh, git and choco are on PATH for every later RUN and for
+# containers started from this image.
+#
+# Do NOT use `ENV PATH="...;${PATH}"` for this. Windows base images don't
+# declare PATH in their image config, so `${PATH}` expands to an empty string
+# and the resulting ENV replaces the real PATH with just the listed entries,
+# hiding C:\Windows\System32 (robocopy, wmic, reg, ...) from every process in
+# the container. bun's bootstrap.ps1 installs Scoop, which refuses to run
+# without robocopy on PATH, so the whole bootstrap silently aborted.
+#
+# With no ENV override, Windows builds each process's environment from the
+# registry, so append to the machine PATH there instead (same approach as the
+# official golang/dotnet servercore images).
+RUN $want = @('C:\Program Files\PowerShell\7', 'C:\Program Files\Git\cmd', 'C:\ProgramData\chocolatey\bin'); `
+    $parts = @([Environment]::GetEnvironmentVariable('PATH', 'Machine') -split ';' | Where-Object { $_ }); `
+    foreach ($p in $want) { if ($parts -notcontains $p -and $parts -notcontains "$p\") { $parts += $p } }; `
+    [Environment]::SetEnvironmentVariable('PATH', ($parts -join ';'), 'Machine'); `
+    Write-Host "Machine PATH: $([Environment]::GetEnvironmentVariable('PATH', 'Machine'))"
 
 # Create workspace directory and configure git
 RUN New-Item -ItemType Directory -Force -Path C:\workspace; `
@@ -41,7 +57,9 @@ RUN git pull; `
     $content = $content -replace '"--passive"', '"--quiet"'; `
     Set-Content -Path $bootstrapPath -Value $content; `
     pwsh -ExecutionPolicy Bypass -File $bootstrapPath -Optimize:$false; `
+    $bootstrapExit = $LASTEXITCODE; `
     git checkout $bootstrapPath; `
+    if ($bootstrapExit -ne 0) { throw "bootstrap.ps1 failed with exit code $bootstrapExit" }; `
     refreshenv;
 
 # Install additional VS components that --includeRecommended doesn't include in containers
@@ -52,15 +70,24 @@ RUN & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe
       --quiet --norestart --wait; `
     refreshenv;
 
-# Reload environment and add SDK bin to PATH
+# Put the Windows SDK x64 bin dir on the machine PATH so CMake can find rc.exe
+# and mt.exe. (Previously this went through `ENV PATH="${SDK_BIN};${PATH}"`,
+# but neither variable exists in the image config so that expanded to ";" -
+# see the note next to the choco install above.)
 RUN $sdkBin = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' -Recurse -Filter 'rc.exe' -ErrorAction SilentlyContinue | `
       Where-Object { $_.Directory.Name -eq 'x64' } | `
       Select-Object -First 1 | ForEach-Object { $_.Directory.FullName }; `
-    if ($sdkBin) { [System.Environment]::SetEnvironmentVariable('SDK_BIN', $sdkBin, 'Machine') }; `
-    refreshenv;
+    if ($sdkBin) { `
+        [Environment]::SetEnvironmentVariable('SDK_BIN', $sdkBin, 'Machine'); `
+        $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine'); `
+        if (($machinePath -split ';') -notcontains $sdkBin) { `
+            [Environment]::SetEnvironmentVariable('PATH', "$sdkBin;$machinePath", 'Machine'); `
+        }; `
+        Write-Host "Windows SDK bin: $sdkBin"; `
+    } else { `
+        Write-Host 'warning: rc.exe not found under Windows Kits; PATH unchanged'; `
+    }
 
-# Add SDK bin to PATH via ENV so CMake can find rc.exe and mt.exe
-ENV PATH="${SDK_BIN};${PATH}"
 ENV BUN_NO_CORE_DUMP=1
 
 # Stage 2: Base - bootstrap environment + specific Bun commit
