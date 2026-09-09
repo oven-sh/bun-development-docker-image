@@ -61,11 +61,20 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 \
     --slave /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-13 \
     --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-13
 
-# Install LLVM 21
-RUN wget https://apt.llvm.org/llvm.sh \
-    && chmod +x llvm.sh \
-    && ./llvm.sh 21 all \
-    && rm llvm.sh \
+# Install LLVM. apt.llvm.org intermittently rejects requests from CI runners
+# (llvm.sh then reports "GPG key not reachable" or the misleading
+# "Distribution ... is not supported"), so retry the whole step a few times.
+RUN for attempt in 1 2 3 4; do \
+        rm -f llvm.sh; \
+        wget --tries=3 --retry-connrefused -O llvm.sh https://apt.llvm.org/llvm.sh \
+        && chmod +x llvm.sh \
+        && ./llvm.sh ${LLVM_VERSION} all \
+        && break; \
+        if [ "$attempt" -eq 4 ]; then echo "LLVM install failed after $attempt attempts" >&2; exit 1; fi; \
+        echo "LLVM install failed (attempt $attempt), retrying in 60s..." >&2; \
+        sleep 60; \
+    done \
+    && rm -f llvm.sh \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up LLVM toolchain symlinks
