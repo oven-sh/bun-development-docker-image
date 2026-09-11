@@ -81,8 +81,8 @@ ENV BUN_NO_CORE_DUMP=1
 RUN git pull && \
     for attempt in 1 2 3 4; do \
         scripts/bootstrap.sh && break; \
-        if [ "$attempt" -eq 4 ]; then echo "bootstrap.sh failed after $attempt attempts" >&2; exit 1; fi; \
-        echo "bootstrap.sh failed (attempt $attempt), retrying in 60s..." >&2; \
+        if [ "$attempt" -eq 4 ]; then echo "bootstrap.sh failed after $attempt attempts"; exit 1; fi; \
+        echo "bootstrap.sh failed (attempt $attempt), retrying in 60s..."; \
         sleep 60; \
     done
 
