@@ -328,6 +328,14 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Create multi-platform images
+  # Runs even when an arch failed: each per-arch tag (`:heavy-amd64`,
+  # `:heavy-arm64`, ...) always points at that arch's last successful
+  # build, so the manifest is "today's build for the arches that succeeded
+  # plus the last good build for the ones that did not". Before this, one
+  # failed arch skipped the whole job and the multi-arch tags went stale
+  # for as long as that arch kept failing (2026-09-06..08: arm64, three
+  # days) while the other arch had a fresh image nobody could pull by the
+  # usual name. A step still needs its amd64 build to have succeeded today.
   create-multiplatform-images:
     needs:
       [
@@ -339,6 +347,7 @@ jobs:
         build-amd64-heavy,
         build-arm64-heavy,
       ]
+    if: ${{ !cancelled() && needs.setup.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -360,6 +369,7 @@ jobs:
 
       # Create multi-platform base images
       - name: Create and push multi-platform base image
+        if: ${{ needs.build-amd64-base.result == 'success' }}
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}:base-${{ needs.setup.outputs.date }} \
@@ -370,6 +380,7 @@ jobs:
 
       # Create multi-platform prebuilt images
       - name: Create and push multi-platform prebuilt image
+        if: ${{ needs.build-amd64-prebuilt.result == 'success' }}
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}:prebuilt-${{ needs.setup.outputs.date }} \
@@ -379,6 +390,7 @@ jobs:
 
       # Create multi-platform heavy images
       - name: Create and push multi-platform heavy image
+        if: ${{ needs.build-amd64-heavy.result == 'success' }}
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}:heavy-${{ needs.setup.outputs.date }} \
@@ -387,6 +399,7 @@ jobs:
             ghcr.io/${{ github.repository }}:heavy-arm64
 
       - name: Create and push multi-platform run image
+        if: ${{ needs.build-amd64-prebuilt.result == 'success' }}
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}:run-${{ needs.setup.outputs.date }} \
