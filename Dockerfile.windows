@@ -15,8 +15,15 @@ RUN Set-ExecutionPolicy Bypass -Scope Process -Force; `
 # Install PowerShell Core and Git
 RUN choco install -y --no-progress git powershell-core
 
-# Set up PATH for PowerShell Core
-ENV PATH="C:\Program Files\PowerShell\7;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;${PATH}"
+# Set up PATH for PowerShell Core and Git.
+# NOTE: ${PATH} expands to an empty string here. The servercore base image
+# does not define PATH in its image config (it only exists in the container's
+# registry hive), and once ENV sets PATH it replaces the registry value for
+# every process in the container. The Windows system directories therefore
+# have to be listed explicitly; without them robocopy/tar/reg are not
+# resolvable and bootstrap.ps1's Scoop install aborts with
+# "Scoop requires 'C:\Windows\System32\Robocopy.exe' to work."
+ENV PATH="C:\Program Files\PowerShell\7;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Users\ContainerAdministrator\AppData\Local\Microsoft\WindowsApps"
 
 # Create workspace directory and configure git
 RUN New-Item -ItemType Directory -Force -Path C:\workspace; `
