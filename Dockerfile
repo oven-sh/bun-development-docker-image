@@ -73,6 +73,21 @@ ENV BUN_NO_CORE_DUMP=1
 # Bootstrap development environment and prepare build directories
 RUN sh -c "git pull && scripts/bootstrap.sh"
 
+# Put the LLVM that bootstrap.sh just installed on PATH, unversioned.
+# bootstrap.sh does this itself with `append_to_path /usr/lib/llvm-N/bin`,
+# but that only writes shell profiles, which Docker RUN/exec shells never
+# source, and its /usr/bin/llvm-symbolizer symlink lives in the Ubuntu-only
+# install_gcc path, so on this Debian image `clang`, `ld.lld`,
+# `llvm-symbolizer` etc. resolve only as `-N` names. A stable
+# /usr/lib/llvm-current -> the newest llvm-N tracks whatever version bun
+# main pins without editing this file on every LLVM bump.
+RUN set -eu; \
+    llvm_dir="$(ls -d /usr/lib/llvm-[0-9]* | sort -V | tail -n1)"; \
+    test -x "$llvm_dir/bin/clang"; \
+    ln -sfn "$llvm_dir" /usr/lib/llvm-current; \
+    /usr/lib/llvm-current/bin/llvm-symbolizer --version
+ENV PATH="/usr/lib/llvm-current/bin:${PATH}"
+
 # Install the Rust toolchain the checked-out ref actually wants.
 #
 # rust-toolchain.toml at the repo root pins an exact nightly channel and
